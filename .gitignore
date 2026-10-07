@@ -1,0 +1,16 @@
+# Credentials and tokens — never commit these
+.env
+.spotify_token_cache
+.cache*
+oauth.json
+browser.json
+ytmusic_headers.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
