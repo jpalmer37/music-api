@@ -1,71 +1,60 @@
-"""Load credentials from environment variables or a .env file."""
+"""Load credentials explicitly from the environment and a selected .env file."""
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-# Load .env from the project root (sessions/music-api/.env)
-_project_root = Path(__file__).resolve().parent.parent
-load_dotenv(_project_root / ".env")
+from dotenv import dotenv_values
 
 
 @dataclass
 class SpotifyConfig:
-    """Spotify API credentials."""
-
     client_id: str = ""
     client_secret: str = ""
-    redirect_uri: str = "http://localhost:8888/callback"
+    redirect_uri: str = "http://127.0.0.1:8888/callback"
     cache_path: str = ".spotify_token_cache"
 
 
 @dataclass
 class YTMusicConfig:
-    """YouTube Music authentication config."""
-
     auth_file: str = "oauth.json"
+    client_id: str = ""
+    client_secret: str = ""
 
 
-def load_spotify_config() -> SpotifyConfig:
-    """Build SpotifyConfig from environment variables.
+def _values(env_file: str | Path | None) -> tuple[dict[str, str | None], Path]:
+    path = Path(env_file).expanduser().resolve() if env_file else Path.cwd() / ".env"
+    if env_file and not path.is_file():
+        raise FileNotFoundError(f"Environment file not found: {path}")
+    return {**dotenv_values(path), **os.environ}, path.parent
 
-    Expected env vars: SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET,
-    and optionally SPOTIFY_REDIRECT_URI.
-    """
-    client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
-    client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
-    redirect_uri = os.environ.get("SPOTIFY_REDIRECT_URI", "http://localhost:8888/callback")
-    cache_path = os.environ.get("SPOTIFY_CACHE_PATH", ".spotify_token_cache")
 
+def _path(value: str, root: Path) -> str:
+    path = Path(value).expanduser()
+    return str(path if path.is_absolute() else root / path)
+
+
+def load_spotify_config(env_file: str | Path | None = None) -> SpotifyConfig:
+    values, root = _values(env_file)
+    client_id = values.get("SPOTIFY_CLIENT_ID")
+    client_secret = values.get("SPOTIFY_CLIENT_SECRET")
     if not client_id or not client_secret:
-        raise ValueError(
-            "SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set. "
-            "Copy .env.example to .env and fill in your credentials."
-        )
-
+        raise ValueError("Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in the environment or .env file")
     return SpotifyConfig(
         client_id=client_id,
         client_secret=client_secret,
-        redirect_uri=redirect_uri,
-        cache_path=cache_path,
+        redirect_uri=values.get("SPOTIFY_REDIRECT_URI") or "http://127.0.0.1:8888/callback",
+        cache_path=_path(values.get("SPOTIFY_CACHE_PATH") or ".spotify_token_cache", root),
     )
 
 
-def load_ytmusic_config() -> YTMusicConfig:
-    """Build YTMusicConfig from environment variables.
-
-    Expected env var: YTMUSIC_AUTH_FILE (defaults to oauth.json).
-    Run `ytmusicapi oauth` to generate the auth file.
-    """
-    auth_file = os.environ.get("YTMUSIC_AUTH_FILE", "oauth.json")
-
-    if not Path(auth_file).exists():
-        raise FileNotFoundError(
-            f"YouTube Music auth file not found: {auth_file}. "
-            "Run `ytmusicapi oauth` to generate it, or set YTMUSIC_AUTH_FILE "
-            "to the correct path."
-        )
-
-    return YTMusicConfig(auth_file=auth_file)
+def load_ytmusic_config(env_file: str | Path | None = None) -> YTMusicConfig:
+    values, root = _values(env_file)
+    client_id = values.get("YTMUSIC_CLIENT_ID")
+    client_secret = values.get("YTMUSIC_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise ValueError("Set YTMUSIC_CLIENT_ID and YTMUSIC_CLIENT_SECRET for YouTube OAuth")
+    auth_file = _path(values.get("YTMUSIC_AUTH_FILE") or "oauth.json", root)
+    if not Path(auth_file).is_file():
+        raise FileNotFoundError(f"YouTube OAuth file not found: {auth_file}. Run `ytmusicapi oauth` first")
+    return YTMusicConfig(auth_file, client_id, client_secret)
