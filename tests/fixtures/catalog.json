@@ -1,0 +1,4 @@
+{
+  "spotify": {"id": "song1", "name": "Winter Sun", "type": "track", "artists": [{"name": "Example Artist"}], "album": {"name": "Daylight"}, "duration_ms": 180000, "explicit": false, "is_playable": true, "uri": "spotify:track:song1"},
+  "ytmusic": {"videoId": "video1", "title": "Winter Sun", "artists": [{"name": "Example Artist"}], "album": {"name": "Daylight"}, "duration_seconds": 180, "isExplicit": false, "isAvailable": true, "videoType": "MUSIC_VIDEO_TYPE_ATV"}
+}

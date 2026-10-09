@@ -1,35 +1,44 @@
-"""Retry decorator with exponential backoff for API rate limits."""
+"""Bounded retries for reads; writes bypass this function."""
 
-import functools
 import time
-from typing import Tuple, Type
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Callable, TypeVar
+
+from requests.exceptions import ConnectionError, HTTPError, Timeout
+from spotipy.exceptions import SpotifyException
+
+T = TypeVar("T")
 
 
-def retry(
-    max_attempts: int = 3,
-    backoff_base: float = 1.0,
-    retryable_exceptions: Tuple[Type[Exception], ...] = (Exception,),
-):
-    """Retry a function on failure with exponential backoff.
-
-    Args:
-        max_attempts: Maximum number of attempts before raising.
-        backoff_base: Base delay in seconds (doubles each retry).
-        retryable_exceptions: Tuple of exception types to catch and retry.
-    """
-
-    def decorator(fn):
-        @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
-            for attempt in range(max_attempts):
+def read_call(method: Callable[..., T], *args, **kwargs) -> T:
+    for attempt in range(3):
+        try:
+            return method(*args, **kwargs)
+        except (SpotifyException, HTTPError, ConnectionError, Timeout) as exc:
+            headers = {}
+            if isinstance(exc, SpotifyException):
+                if exc.reason == "QUOTA_EXCEEDED" or exc.http_status not in {429, 500, 502, 503, 504}:
+                    raise
+                headers = exc.headers or {}
+            elif isinstance(exc, HTTPError):
+                response = exc.response
+                if response is None or response.status_code not in {429, 500, 502, 503, 504}:
+                    raise
+                headers = response.headers
+            if attempt == 2:
+                raise
+            delay = float(2 ** attempt)
+            retry_after = headers.get("Retry-After")
+            if retry_after:
                 try:
-                    return fn(*args, **kwargs)
-                except retryable_exceptions as exc:
-                    if attempt == max_attempts - 1:
-                        raise
-                    wait = backoff_base * (2 ** attempt)
-                    time.sleep(wait)
-
-        return wrapper
-
-    return decorator
+                    delay = max(delay, float(retry_after))
+                except ValueError:
+                    try:
+                        delay = max(delay, (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds())
+                    except (ValueError, TypeError):
+                        pass
+            if delay > 60:
+                raise
+            time.sleep(delay)
+    raise AssertionError("Unreachable retry state")
